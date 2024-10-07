@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "mongodb": "^5.7.0"
+  },
+  "type": "module"
+}
