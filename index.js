@@ -1,4 +1,6 @@
 import dbInsert from './mongoDb/dbInsert.js';
+import dbInsertSignUp from './mongoDb/dbInsertSignUp.js';
+import { generateStoreId, getStoreIdReplaceList } from './functions/generateStoreId.js';
 
 export async function getCashrewards(req, res) {
   const response = await fetch("https://api-prod.cashrewards.com.au/api/v1/merchants/all-stores?limit=3000&offset=0");
@@ -7,13 +9,15 @@ export async function getCashrewards(req, res) {
   
   const stores = [];
 
+  const storeIdReplaceList = await getStoreIdReplaceList();
+
   for (let store of storeData) {
 
     if (store.Online) {
 
         const programUrl = `https://www.cashrewards.com.au/store/${store.HyphenatedString}`;
         const storeName = store.Name;
-        const storeId = storeName.replace(" AU","").replace(" Australia","").toLowerCase().replaceAll(/[^a-zA-Z0-9 ]/g, "").replaceAll(" ","");
+        const storeId = generateStoreId(storeName, storeIdReplaceList);
         const isBonusPointsOnly = store.CommissionString.includes("$");
         const isUpTo = store.CommissionString.includes("Up to")
         const reward = store.ClientCommission;
@@ -42,7 +46,7 @@ export async function getCashrewards(req, res) {
   const boostedStores = boostedStoreData.map((store) => {
 
     const storeName = store.merchant.name;
-    const storeId = storeName.replace(" AU","").replace(" Australia","").toLowerCase().replaceAll(/[^a-zA-Z0-9 ]/g, "").replaceAll(" ","");
+    const storeId = generateStoreId(storeName, storeIdReplaceList);
     const wasReward = Number(store.wasRate && store.wasRate?.match(/\d+\.?\d?/g)[0]);
 
     const endDate = new Date(store.endDateTime).getTime();
@@ -120,7 +124,7 @@ export async function getCashrewards(req, res) {
     for (let store of storeData) {
         
       const storeName = store.name;
-      const storeId = storeName.replace(" AU","").replace(" Australia","").toLowerCase().replaceAll(/[^a-zA-Z0-9 ]/g, "").replaceAll(" ","");
+      const storeId = generateStoreId(storeName, storeIdReplaceList);
   
         const storeObject = {
             storeId,
@@ -157,3 +161,16 @@ export async function getCashrewards(req, res) {
   res.send('Done');
 
 }
+
+export async function getCashrewardsSignupBonus(req, res) {
+  const response = await fetch("https://www.cashrewards.com.au/raf/bonus?max=false");
+  const responseData = await response.json();
+
+  const bonus = responseData.mateBonus
+
+  dbInsertSignUp("pointassistant-main", "signupBonuses", "cashrewards", bonus, null);
+  
+  res.send('Done');
+
+}
+
