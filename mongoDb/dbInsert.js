@@ -20,7 +20,8 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
     cashrewards: "Cashrewards",
     shopback: "ShopBack",
     kickback: "Kickback",
-    topcashback: "TopCashback"
+    topcashback: "TopCashback",
+    cashbackaustralia: "Cashback Australia"
   }
 
   try {

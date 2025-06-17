@@ -162,6 +162,48 @@ export async function getCashrewards(req, res) {
 
 }
 
+export async function getCashbackAustralia(req, res) {
+  const response = await fetch("https://api.cashbackaustralia.com.au/stores/0");
+  const storeResponse = await response.json();
+  const storeData = storeResponse;
+  
+  const stores = [];
+
+  const storeIdReplaceList = await getStoreIdReplaceList();
+
+  for (let store of storeData) {
+
+        const programUrl = `https://cashbackaustralia.com.au/store/${store.slug}/?refcode=HEY@R180`;
+        const storeName = store.name;
+        const storeId = generateStoreId(storeName, storeIdReplaceList);
+        const isBonusPointsOnly = store.amount_type === "fixed";
+        const isUpTo = store.rate_type === "upto"
+        const reward = parseFloat(store.cashback);
+
+        
+        const storeObject = {
+            program: 'cashbackaustralia',
+            programUrl,
+            storeName,
+            storeId,
+            reward,
+            rewardType: 'cashback',
+            isBonusPointsOnly,
+            isUpTo
+        }
+
+        stores.push(storeObject);
+  }
+
+  // Add to DB
+
+  dbInsert("pointassistant-main", "stores", "cashbackaustralia", stores);
+
+  res.send('Done');
+
+}
+  
+
 export async function getCashrewardsSignupBonus(req, res) {
   const response = await fetch("https://www.cashrewards.com.au/raf/bonus?max=false");
   const responseData = await response.json();
