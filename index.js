@@ -51,7 +51,7 @@ export async function getCashrewards(req, res) {
 
     const endDate = new Date(store.endDateTime).getTime();
     const now = new Date().getTime();
-    const isBonus = now < endDate && ((endDate - now) < 604800000); // End date less than 7 days
+    const isBonus = now < endDate && ((endDate - now) < 2764800000); // End date less than 32 days
 
     const boostedObject = {
       storeName,
@@ -202,7 +202,98 @@ export async function getCashbackAustralia(req, res) {
   res.send('Done');
 
 }
+
+export async function getGrowMyMoney(req, res) {
+  const response = await fetch("https://lgq6qkjl.api.sanity.io/v2021-10-21/data/query/production?query=%0Acoalesce%28%0A++*%5B_type+%3D%3D+%27retailer%27+%26%26+%21%28_id+in+path%28%27drafts.**%27%29%29+%26%26+deleted+%21%3D+true+%26%26+%28%24retailerType+%3D%3D+%22%22+%7C%7C+%24retailerType+%3D%3D+rawData.retailerType%29+%5D+%7C+order%28lower%28rawData.rewards%5B0%5D.displayOfferShort%29+desc%29+%5B0...4000%5D+%7B%0A++++%0A++%0A++_type%2C%0A++_id%2C%0A++_createdAt%2C%0A++_updatedAt%2C%0A++brandPartners%5B%5D+-%3E+%7B+...+%7D%2C%0A++title%2C%0A++slug+%7B%0A++++current%2C%0A++++prefix+-%3E+%7B%0A++++++slug+%7B%0A++++++++current%2C%0A++++++++prefix+-%3E+%7B%0A++++++++++slug+%7B%0A++++++++++++current%2C%0A++++++++++++prefix+-%3E+%7B%0A++++++++++++++slug+%7B%0A++++++++++++++++current%0A++++++++++++++%7D%0A++++++++++++%7D%0A++++++++++%7D%0A++++++++%7D%0A++++++%7D%0A++++%7D%0A++%7D%0A%2C%0A++description%2C%0A++topLeftBadge%2C%0A++bottomRightBadge%2C%0A++image+%7B+%0A++...%2C%0A++mobileImage+%7B%0A++++...%2C%0A++++asset+-%3E+%7B%0A++++++_id%2C%0A++++++metadata+%7B+dimensions%2C+palette%2C+lqip+%7D%2C%0A++++++mimeType%2C%0A++++++size%2C%0A++++++url%0A++++%7D%0A++%7D%2C%0A++asset+-%3E+%7B%0A++++_id%2C%0A++++metadata+%7B+dimensions%2C+palette%2C+lqip+%7D%2C%0A++++mimeType%2C%0A++++size%2C%0A++++url%0A++%7D%0A+%7D%2C%0A++rawData+%7B+...+%7D%0A%0A++%7D%2C%0A++%5B%5D%0A%29%0A&%24categories=%5B%5D&%24retailerType=%22%22&returnQuery=false");
+  const storeResponse = await response.json();
+  const storeData = storeResponse.result.filter(store => store.rawData.retailerType === "regular").filter(store => !store.rawData.rewards[0].displayOfferShort.includes("USD"));
   
+  const stores = [];
+
+  const storeIdReplaceList = await getStoreIdReplaceList();
+
+  for (let store of storeData) {
+
+        const programUrl = `https://growmymoney.com.au/retailers/${store.slug.current}/`;
+        const storeName = store.rawData.name;
+        const storeId = generateStoreId(storeName, storeIdReplaceList);
+        const isBonusPointsOnly = !store.rawData.rewards[0].displayOfferShort.includes("%");
+        const reward = parseFloat(store.rawData.rewards[0].displayOfferShort.replace("$",""));
+        const isBonus = store.topLeftBadge?.toLowerCase().includes("cashback boom");
+
+        
+        const storeObject = {
+            program: 'growmymoney',
+            programUrl,
+            storeName,
+            storeId,
+            reward,
+            rewardType: 'cashback',
+            isBonus,
+            isBonusPointsOnly,
+            isUpTo: true
+        }
+
+        stores.push(storeObject);
+  }
+
+  // Add to DB
+
+  dbInsert("pointassistant-main", "stores", "growmymoney", stores);
+
+  res.send('Done');
+
+}
+  
+export async function getPassport(req, res) {
+  
+  const stores = [];
+
+  const storeIdReplaceList = await getStoreIdReplaceList();
+
+  for (let page = 1; page <= 20; page++) {
+
+    const response = await fetch(`https://rzskiaobtycjgjtzlepb.supabase.co/functions/v1/merchants?page_size=100&page=${page}&sort_by=merchant_name&sort_order=asc&country_code=AU`);
+    const responseStores = await response.json();
+    const storeData = responseStores.data;
+
+    for (let store of storeData) {
+
+      const programUrl = `https://www.passport.travel/shopping/merchants/${store.slug}`;
+      const storeName = store.name;
+      const storeId = generateStoreId(storeName, storeIdReplaceList);
+      const isBonusPointsOnly = store.reward_type === "Fixed";
+      const reward = store.reward;
+
+      
+      const storeObject = {
+          program: 'passport',
+          programUrl,
+          storeName,
+          storeId,
+          reward,
+          rewardType: 'points',
+          isBonusPointsOnly,
+          isUpTo: true
+      }
+
+      stores.push(storeObject);
+
+    }
+
+    if (page === responseStores.meta.pagination.page_count) {
+      console.log("page limit reached");
+      break;
+    }
+  }
+
+  // Add to DB
+
+  dbInsert("pointassistant-main", "stores", "passport", stores);
+
+  res.send('Done');
+
+}
 
 export async function getCashrewardsSignupBonus(req, res) {
   const response = await fetch("https://www.cashrewards.com.au/raf/bonus?max=false");
@@ -215,4 +306,3 @@ export async function getCashrewardsSignupBonus(req, res) {
   res.send('Done');
 
 }
-

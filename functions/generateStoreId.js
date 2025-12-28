@@ -8,6 +8,7 @@ export const generateStoreId = (storeName, storeIdReplace) => {
     storeId = storeId.replace(replace.split("/")[0], replace.split("/")[1]);
   }
   storeId = storeId
+    .replace(" AU/NZ","")
     .replace(" AU","")
     .replace(" Australia","")
     .replace(/^47$/, "47 Brand")

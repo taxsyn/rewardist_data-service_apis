@@ -1,4 +1,6 @@
 import {MongoClient} from "mongodb";
+import { updateOfferHistory } from "../functions/updateOfferHistory.js";
+
 // const {MongoClient} = require('mongodb');
 
 const dbInsert = async (dbName, collectionName, program, storeOffers) => {
@@ -21,7 +23,9 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
     shopback: "ShopBack",
     kickback: "Kickback",
     topcashback: "TopCashback",
-    cashbackaustralia: "Cashback Australia"
+    simplybestcoupons: "Simply Best Coupons",
+    growmymoney: "Grow My Money",
+    passport: "Passport Rewards"
   }
 
   try {
@@ -44,6 +48,8 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
       const highestRewardIsUpTo = highestOffer.isUpTo;
       const highestWasRewardDiff = updatedOffers?.sort((a, b) => a.wasRewardDiff - b.wasRewardDiff).slice().pop()?.wasRewardDiff || 0;
 
+      const offerHistory = updateOfferHistory(existingStore.offerHistory, program, storeOffer.reward);
+
       const filteredCategories = updatedCategories.reduce((accumulator, current) => {
         if (!accumulator.find((cat) => cat.catId === current.catId)) {
           accumulator.push(current);
@@ -53,6 +59,7 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
       return {
         ...existingStore,
         offers: updatedOffers,
+        offerHistory: offerHistory,
         categories: filteredCategories,
         highestReward: highestReward,
         highestRewardType: highestRewardType,
@@ -73,6 +80,8 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
       const highestRewardIsUpTo = storeOffer.isUpTo;
       const platformName = platformNames[program];
 
+      const offerHistory = updateOfferHistory(undefined, program, storeOffer.reward);
+
       const newStore = {
         storeId: storeOffer.storeId,
         name: storeOffer.storeName,
@@ -80,6 +89,7 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
         containsPointsOffer: storeOffer.rewardType === "points",
         containsCashbackOffer: storeOffer.rewardType === "cashback",
         offers: [storeOffer],
+        offerHistory: offerHistory,
         highestReward: highestReward,
         highestRewardType: highestRewardType,
         highestWasRewardDiff: highestWasRewardDiff,
@@ -90,7 +100,7 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
     });
 
     const existingAndNewStores = [...updatedStores, ...newStores];
-
+    
     const replaceStatement = updatedStores.map(store => {
         return { replaceOne: {
           "filter": { "storeId": store.storeId },
