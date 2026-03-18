@@ -25,7 +25,8 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
     topcashback: "TopCashback",
     simplybestcoupons: "Simply Best Coupons",
     growmymoney: "Grow My Money",
-    passport: "Passport Rewards"
+    passport: "Passport Rewards",
+    cashbackaustralia: "Cashback Australia"
   }
 
   try {
@@ -41,7 +42,7 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
       const updatedOffers = [...existingStore.offers.filter(offer => offer.program != storeOffer.program), storeOffer] 
       const updatedCategories = updatedOffers.filter(updatedOffer => updatedOffer.categories).map(updatedOffer => updatedOffer.categories).flat();
 
-      const highestOffer = updatedOffers?.sort((a, b) => a.reward - b.reward).slice().pop();
+      const highestOffer = updatedOffers?.sort((a, b) => (a.isBonusPointsOnly && a.rewardType === "points" ? (a.reward / 100) : a.reward) - (b.isBonusPointsOnly && b.rewardType === "points"  ? (b.reward / 100) : b.reward)).slice().pop();
       const highestReward = highestOffer.reward;
       const highestRewardType = highestOffer.rewardType;
       const highestRewardIsBonusPointsOnly = highestOffer.isBonusPointsOnly;
@@ -67,7 +68,8 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
         highestRewardIsBonusPointsOnly: highestRewardIsBonusPointsOnly,
         highestRewardIsUpTo: highestRewardIsUpTo,
         containsCashbackOffer: updatedOffers.some(offer => offer.rewardType === "cashback"),
-        containsPointsOffer: updatedOffers.some(offer => offer.rewardType === "points")
+        containsPointsOffer: updatedOffers.some(offer => offer.rewardType === "points"),
+        markedForDeletion: false
       }
     });
 
@@ -94,7 +96,8 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
         highestRewardType: highestRewardType,
         highestWasRewardDiff: highestWasRewardDiff,
         highestRewardIsBonusPointsOnly: highestRewardIsBonusPointsOnly,
-        highestRewardIsUpTo: highestRewardIsUpTo
+        highestRewardIsUpTo: highestRewardIsUpTo,
+        markedForDeletion: false
       }
       return newStore;
     });
@@ -120,14 +123,13 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
 
     if (insertStatement.length > 0) {
       await collection.bulkWrite(insertStatement);
-    }
-
+    }  
+    
     // Delete any orphan offers
 
     const allProgramStores = await collection.find({ "offers.program" : program }).toArray();
 
     const orphanOffers = allProgramStores.filter(store => !storeIds.includes(store.storeId));
-    const orphanStores = orphanOffers.filter(store => store.offers.length < 2);
     
     const removeOfferStatement = orphanOffers.map(({_id, ...store}) => {
       return { updateOne: {
@@ -140,21 +142,45 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
       await collection.bulkWrite(removeOfferStatement);
     }
 
-    const deleteStatement = orphanStores.map(store => {
+    // Mark orphan stores for deletion
+
+    const orphanStores = orphanOffers.filter(store => !store.offers || store.offers.length < 2);
+    const orphanStoresWithNoMark = orphanStores.filter(store => !store.markedForDeletion);
+
+    const setForDeletionStatement = orphanStoresWithNoMark.map(store => {
+        var nowPlus60Days = new Date();
+        nowPlus60Days.setDate(nowPlus60Days.getDate() + 60);
+
+        return { replaceOne: {
+          "filter": { "storeId": store.storeId },
+          "replacement": {...store, markedForDeletion: nowPlus60Days}
+        } }
+    })
+
+    if (setForDeletionStatement.length > 0)   {
+      console.log("setForDeletionStatement: ", setForDeletionStatement)
+      await collection.bulkWrite(setForDeletionStatement);
+    }
+
+    // Delete any orphan stores
+
+    var now = new Date();
+    const orphanStoresWithMarkPastDeadline = orphanStores.filter(store => {
+      return store.markedForDeletion && store.markedForDeletion < now});
+
+    const deleteStatement = orphanStoresWithMarkPastDeadline.map(store => {
       return { 
         deleteOne: {"filter":  { storeId: store.storeId }}
       }
     })
 
-    console.log("DB Insert Complete");
-
     if (deleteStatement.length > 0)   {
+      console.log("deleteStatement: ", deleteStatement)
       await collection.bulkWrite(deleteStatement);
     }
 
-    // await collection.deleteMany({ program: program });
-    // const insertManyResult = await collection.insertMany(storeOffers);
-    // console.log(`${insertManyResult.insertedCount} documents successfully inserted.\n`);
+    console.log("DB Insert Complete");
+
   } catch (err) {
     console.error(`Something went wrong trying to insert the new documents: ${err}\n`);
   }
@@ -162,4 +188,5 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
 }
 
 export default dbInsert;
-// exports.dbInsert = dbInsert;
+// exports.dbInsert = dbInsert;\
+

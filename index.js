@@ -1,6 +1,8 @@
 import dbInsert from './mongoDb/dbInsert.js';
 import dbInsertSignUp from './mongoDb/dbInsertSignUp.js';
+import dbFind from './mongoDb/dbFind.js';
 import { generateStoreId, getStoreIdReplaceList } from './functions/generateStoreId.js';
+import { generateWasReward } from './functions/generateWasReward.js';
 
 export async function getCashrewards(req, res) {
   const response = await fetch("https://api-prod.cashrewards.com.au/api/v1/merchants/all-stores?limit=3000&offset=0");
@@ -171,6 +173,13 @@ export async function getCashbackAustralia(req, res) {
 
   const storeIdReplaceList = await getStoreIdReplaceList();
 
+  const allExistingStores = await dbFind(
+    "pointassistant-main", 
+    "storeOffers", 
+    {"offers.program" : "cashbackaustralia"}, 
+    {'storeId':1, 'offerHistory':1,}
+  );
+
   for (let store of storeData) {
 
         const programUrl = `https://cashbackaustralia.com.au/store/${store.slug}/?refcode=HEY@R180`;
@@ -180,6 +189,10 @@ export async function getCashbackAustralia(req, res) {
         const isUpTo = store.rate_type === "upto"
         const reward = parseFloat(store.cashback);
 
+        const offerHistory = allExistingStores.find(store => store.storeId === storeId)?.offerHistory.find(history => history.program === "cashbackaustralia").offers.map(offer => offer.reward);
+        const generatedWasReward = offerHistory && generateWasReward(offerHistory);
+        const wasReward = (generatedWasReward && generatedWasReward < reward) ? generatedWasReward : null;
+        const wasRewardDiff = wasReward ? parseFloat((((reward - wasReward) / wasReward) * 100).toFixed(2)) : 0;
         
         const storeObject = {
             program: 'cashbackaustralia',
@@ -189,7 +202,12 @@ export async function getCashbackAustralia(req, res) {
             reward,
             rewardType: 'cashback',
             isBonusPointsOnly,
-            isUpTo
+            isUpTo,
+            ...(wasReward && {wasReward}),
+            ...(wasReward && {isBonus: true}),
+            ...(wasReward && {wasRewardIsUpTo: isUpTo}),
+            ...(wasReward && {wasRewardIsBonusPointsOnly: isBonusPointsOnly}),
+            ...(wasRewardDiff && {wasRewardDiff})
         }
 
         stores.push(storeObject);
@@ -197,7 +215,7 @@ export async function getCashbackAustralia(req, res) {
 
   // Add to DB
 
-  dbInsert("pointassistant-main", "stores", "cashbackaustralia", stores);
+  await dbInsert("pointassistant-main", "stores", "cashbackaustralia", stores);
 
   res.send('Done');
 
@@ -206,11 +224,18 @@ export async function getCashbackAustralia(req, res) {
 export async function getGrowMyMoney(req, res) {
   const response = await fetch("https://lgq6qkjl.api.sanity.io/v2021-10-21/data/query/production?query=%0Acoalesce%28%0A++*%5B_type+%3D%3D+%27retailer%27+%26%26+%21%28_id+in+path%28%27drafts.**%27%29%29+%26%26+deleted+%21%3D+true+%26%26+%28%24retailerType+%3D%3D+%22%22+%7C%7C+%24retailerType+%3D%3D+rawData.retailerType%29+%5D+%7C+order%28lower%28rawData.rewards%5B0%5D.displayOfferShort%29+desc%29+%5B0...4000%5D+%7B%0A++++%0A++%0A++_type%2C%0A++_id%2C%0A++_createdAt%2C%0A++_updatedAt%2C%0A++brandPartners%5B%5D+-%3E+%7B+...+%7D%2C%0A++title%2C%0A++slug+%7B%0A++++current%2C%0A++++prefix+-%3E+%7B%0A++++++slug+%7B%0A++++++++current%2C%0A++++++++prefix+-%3E+%7B%0A++++++++++slug+%7B%0A++++++++++++current%2C%0A++++++++++++prefix+-%3E+%7B%0A++++++++++++++slug+%7B%0A++++++++++++++++current%0A++++++++++++++%7D%0A++++++++++++%7D%0A++++++++++%7D%0A++++++++%7D%0A++++++%7D%0A++++%7D%0A++%7D%0A%2C%0A++description%2C%0A++topLeftBadge%2C%0A++bottomRightBadge%2C%0A++image+%7B+%0A++...%2C%0A++mobileImage+%7B%0A++++...%2C%0A++++asset+-%3E+%7B%0A++++++_id%2C%0A++++++metadata+%7B+dimensions%2C+palette%2C+lqip+%7D%2C%0A++++++mimeType%2C%0A++++++size%2C%0A++++++url%0A++++%7D%0A++%7D%2C%0A++asset+-%3E+%7B%0A++++_id%2C%0A++++metadata+%7B+dimensions%2C+palette%2C+lqip+%7D%2C%0A++++mimeType%2C%0A++++size%2C%0A++++url%0A++%7D%0A+%7D%2C%0A++rawData+%7B+...+%7D%0A%0A++%7D%2C%0A++%5B%5D%0A%29%0A&%24categories=%5B%5D&%24retailerType=%22%22&returnQuery=false");
   const storeResponse = await response.json();
-  const storeData = storeResponse.result.filter(store => store.rawData.retailerType === "regular").filter(store => !store.rawData.rewards[0].displayOfferShort.includes("USD"));
+  const storeData = storeResponse.result.filter(store => store.rawData.retailerType === "regular").filter(store => store.rawData.rewards).filter(store => !store.rawData.rewards[0].displayOfferShort.includes("USD")).filter(store => !store.rawData.rewards[0].displayOfferShort.toLowerCase().includes("no cashback currently offered") && parseFloat(store.rawData.rewards[0].displayOfferShort.replace("$","").replace("%","")))
   
   const stores = [];
 
   const storeIdReplaceList = await getStoreIdReplaceList();
+
+  const allExistingStores = await dbFind(
+    "pointassistant-main", 
+    "storeOffers", 
+    {"offers.program" : "growmymoney"}, 
+    {'storeId':1, 'offerHistory':1,}
+  );
 
   for (let store of storeData) {
 
@@ -220,6 +245,11 @@ export async function getGrowMyMoney(req, res) {
         const isBonusPointsOnly = !store.rawData.rewards[0].displayOfferShort.includes("%");
         const reward = parseFloat(store.rawData.rewards[0].displayOfferShort.replace("$",""));
         const isBonus = store.topLeftBadge?.toLowerCase().includes("cashback boom");
+
+        const offerHistory = allExistingStores.find(store => store.storeId === storeId)?.offerHistory.find(history => history.program === "growmymoney").offers.map(offer => offer.reward);
+        const generatedWasReward = offerHistory && generateWasReward(offerHistory);
+        const wasReward = (generatedWasReward && generatedWasReward < reward) ? generatedWasReward : null;
+        const wasRewardDiff = wasReward ? parseFloat((((reward - wasReward) / wasReward) * 100).toFixed(2)) : 0;
 
         
         const storeObject = {
@@ -231,7 +261,12 @@ export async function getGrowMyMoney(req, res) {
             rewardType: 'cashback',
             isBonus,
             isBonusPointsOnly,
-            isUpTo: true
+            isUpTo: true,
+            ...(wasReward && {wasReward}),
+            ...(wasReward && {isBonus: true}),
+            ...(wasReward && {wasRewardIsUpTo: true}),
+            ...(wasReward && {wasRewardIsBonusPointsOnly: isBonusPointsOnly}),
+            ...(wasRewardDiff && {wasRewardDiff})
         }
 
         stores.push(storeObject);
@@ -239,7 +274,13 @@ export async function getGrowMyMoney(req, res) {
 
   // Add to DB
 
-  dbInsert("pointassistant-main", "stores", "growmymoney", stores);
+  console.log(stores.length)
+  console.log(stores[0])
+  console.log(stores[200])
+  console.log(stores[700])
+
+
+  await dbInsert("pointassistant-main", "stores", "growmymoney", stores);
 
   res.send('Done');
 
@@ -250,6 +291,13 @@ export async function getPassport(req, res) {
   const stores = [];
 
   const storeIdReplaceList = await getStoreIdReplaceList();
+
+  const allExistingStores = await dbFind(
+    "pointassistant-main", 
+    "storeOffers", 
+    {"offers.program" : "passport"}, 
+    {'storeId':1, 'offerHistory':1,}
+  );
 
   for (let page = 1; page <= 20; page++) {
 
@@ -265,6 +313,10 @@ export async function getPassport(req, res) {
       const isBonusPointsOnly = store.reward_type === "Fixed";
       const reward = store.reward;
 
+      const offerHistory = allExistingStores.find(store => store.storeId === storeId)?.offerHistory.find(history => history.program === "passport").offers.map(offer => offer.reward);
+      const generatedWasReward = offerHistory && generateWasReward(offerHistory);
+      const wasReward = (generatedWasReward && generatedWasReward < reward) ? generatedWasReward : null;
+      const wasRewardDiff = wasReward ? parseFloat((((reward - wasReward) / wasReward) * 100).toFixed(2)) : 0;
       
       const storeObject = {
           program: 'passport',
@@ -274,7 +326,12 @@ export async function getPassport(req, res) {
           reward,
           rewardType: 'points',
           isBonusPointsOnly,
-          isUpTo: true
+          isUpTo: true,
+          ...(wasReward && {wasReward}),
+          ...(wasReward && {isBonus: true}),
+          ...(wasReward && {wasRewardIsUpTo: true}),
+          ...(wasReward && {wasRewardIsBonusPointsOnly: isBonusPointsOnly}),
+          ...(wasRewardDiff && {wasRewardDiff})
       }
 
       stores.push(storeObject);
@@ -289,7 +346,7 @@ export async function getPassport(req, res) {
 
   // Add to DB
 
-  dbInsert("pointassistant-main", "stores", "passport", stores);
+  await dbInsert("pointassistant-main", "stores", "passport", stores);
 
   res.send('Done');
 
