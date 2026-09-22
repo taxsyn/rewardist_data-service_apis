@@ -1,15 +1,12 @@
-import {MongoClient} from "mongodb";
+import getMongoClient from "./client.js";
 import { updateOfferHistory } from "../functions/updateOfferHistory.js";
 
-// const {MongoClient} = require('mongodb');
+import { logMemoryUsage } from "../functions/logMemoryUsage.js";
 
 const dbInsert = async (dbName, collectionName, program, storeOffers) => {
 
-  const uri =
-    "mongodb+srv://anthony-ss:RcU1pNmJe80VgdaB@serverlessinstance0.psulp.mongodb.net/?retryWrites=true&w=majority";
-
-  const client = new MongoClient(uri);
-  await client.connect();
+  logMemoryUsage(`dbInsert:start:${program}`);
+  const client = await getMongoClient();
   const database = client.db(dbName); 
   const collection = database.collection("storeOffers"); //* change "storeOffers" to collectionName if reverting
 
@@ -24,9 +21,10 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
     kickback: "Kickback",
     topcashback: "TopCashback",
     simplybestcoupons: "Simply Best Coupons",
-    growmymoney: "Grow My Money",
+    growmymoney: "Finder Shopping",
     passport: "Passport Rewards",
-    cashbackaustralia: "Cashback Australia"
+    cashbackaustralia: "Cashback Australia",
+    kick: "Kick Cashback",
   }
 
   try {
@@ -101,8 +99,6 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
       }
       return newStore;
     });
-
-    const existingAndNewStores = [...updatedStores, ...newStores];
     
     const replaceStatement = updatedStores.map(store => {
         return { replaceOne: {
@@ -180,6 +176,7 @@ const dbInsert = async (dbName, collectionName, program, storeOffers) => {
     }
 
     console.log("DB Insert Complete");
+    logMemoryUsage(`dbInsert:complete:${program}`);
 
   } catch (err) {
     console.error(`Something went wrong trying to insert the new documents: ${err}\n`);

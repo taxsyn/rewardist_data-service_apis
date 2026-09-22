@@ -1,18 +1,18 @@
-import {MongoClient} from "mongodb";
+import getMongoClient from "./client.js";
+import { logMemoryUsage } from "../functions/logMemoryUsage.js";
 
 const dbFind = async (dbName, collectionName, criteria, project) => {
 
-  const uri =
-    "mongodb+srv://anthony-ss:RcU1pNmJe80VgdaB@serverlessinstance0.psulp.mongodb.net/?retryWrites=true&w=majority";
-
-  const client = new MongoClient(uri);
-  await client.connect();
+  logMemoryUsage(`dbFind:start:${collectionName}`);
+  const client = await getMongoClient();
   const database = client.db(dbName); 
   const collection = database.collection(collectionName);
 
   try {
 
-    return await collection.find(criteria).project(project).toArray();
+    const results = await collection.find(criteria).project(project).toArray();
+    logMemoryUsage(`dbFind:complete:${collectionName}`);
+    return results;
     
   } catch (err) {
     console.error(`Something went wrong: ${err}\n`);

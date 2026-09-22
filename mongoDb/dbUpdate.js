@@ -1,12 +1,10 @@
-import {MongoClient} from "mongodb";
+import getMongoClient from "./client.js";
+import { logMemoryUsage } from "../functions/logMemoryUsage.js";
 
 const dbUpdate = async (dbName, collectionName, updateStatement) => {
 
-  const uri =
-    "mongodb+srv://anthony-ss:RcU1pNmJe80VgdaB@serverlessinstance0.psulp.mongodb.net/?retryWrites=true&w=majority";
-
-  const client = new MongoClient(uri);
-  await client.connect();
+  logMemoryUsage(`dbUpdate:start:${collectionName}`);
+  const client = await getMongoClient();
   const database = client.db(dbName); 
   const collection = database.collection(collectionName);
 
@@ -14,13 +12,11 @@ const dbUpdate = async (dbName, collectionName, updateStatement) => {
 
     const updateResult = await collection.bulkWrite(updateStatement);
 
+    logMemoryUsage(`dbUpdate:complete:${collectionName}`);
     return updateResult;
     
   } catch (err) {
     console.error(`Something went wrong: ${err}\n`);
-  } finally {
-    // Close the connection after the operation completes
-    await client.close();
   }
    
 
